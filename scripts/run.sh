@@ -21,7 +21,7 @@ ORIGINAL_DIR="$(pwd)"
 
 # Start Node B (C++ server)
 echo "Starting Node B..."
-run_in_terminal "NodeB" "$ORIGINAL_DIR/nodes/nodeB" "./build/server"
+run_in_terminal "NodeB" "$ORIGINAL_DIR/nodes/nodeB" "./build/server 0.0.0.0:50051 user1"
 
 # Wait for Node B to start
 sleep 2

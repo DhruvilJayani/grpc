@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find dependencies
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(nlohmann_json REQUIRED)
+find_package(jsoncpp CONFIG REQUIRED)
 
 # Find Protobuf installation
 find_package(Protobuf CONFIG REQUIRED)
@@ -42,6 +43,7 @@ target_link_libraries(server PRIVATE
     gRPC::grpc++_reflection
     Boost::system
     nlohmann_json::nlohmann_json
+    JsonCpp::JsonCpp
 )
 
 # Copy config.json to build directory

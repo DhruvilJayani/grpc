@@ -6,7 +6,7 @@ echo "Original Directory: $ORIGINAL_DIR"
 
 # Build Node B (C++ server)
 echo "Building Node B (C++ server)..."
-cd ../nodes/nodeB
+cd nodes/nodeB
 mkdir -p build
 cd build
 cmake ..

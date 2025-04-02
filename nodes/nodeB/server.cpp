@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <cstdlib>
+#include "shared_memory.hpp"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -38,55 +39,30 @@ class DataServiceClient {
 };
 
 class DataServiceImpl final : public DataService::Service {
- public:
-  DataServiceImpl(const json& config) 
-      : config_(config), counter_(0), last_target_(-1) {
-    std::cout << "Server initialized with counter = 0" << std::endl;
-  }
+private:
+    SharedMemory shared_memory_;
 
-  Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
-    try {
-      std::cout << "NodeB: Received data ID " << request->id() << "\n";
+public:
+    DataServiceImpl(const std::string& user_id) : shared_memory_(user_id) {}
 
-      // Update counter
-      counter_++;
-
-      // Get last target and determine next target
-      int next_target = (last_target_ == 0) ? 1 : 0;  // Toggle between 0 (C) and 1 (D)
-      
-      const auto& edges = config_["edges"];
-      if (edges.size() < 2) {
-        std::cerr << "Error: Not enough edges configured" << std::endl;
-        return Status(grpc::StatusCode::INTERNAL, "Not enough edges configured");
-      }
-      
-      const auto& target_edge = edges[next_target];
-      std::string target = target_edge["ip"].get<std::string>() + ":" + std::to_string(target_edge["port"].get<int>());
-      std::string target_name = target_edge["id"].get<std::string>();
-
-      std::cout << "NodeB: Forwarding data ID " << request->id() 
-                << " to " << target_name << " at " << target 
-                << " (Total messages processed: " << counter_ << ")" << std::endl;
-
-      // Update last target
-      last_target_ = next_target;
-
-      // Forward the message
-      auto channel = CreateChannel(target, grpc::InsecureChannelCredentials());
-      DataServiceClient client(channel);
-      client.PushData(*request);
-
-      return Status::OK;
-    } catch (const std::exception& e) {
-      std::cerr << "Error in PushData: " << e.what() << std::endl;
-      return Status(grpc::StatusCode::INTERNAL, "Internal server error");
+    Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
+        std::cout << "Received message " << request->id() << " from Node A" << std::endl;
+        
+        // Increment the counter
+        shared_memory_.incrementCounter();
+        
+        // Update message history
+        shared_memory_.updateMessageHistory(request->id());
+        
+        // Forward to either Node C or Node D
+        int target = rand() % 2;  // 0 for Node C, 1 for Node D
+        shared_memory_.setLastTarget(target);
+        
+        std::string target_node = (target == 0) ? "Node C" : "Node D";
+        std::cout << "Forwarding message to " << target_node << std::endl;
+        
+        return Status::OK;
     }
-  }
-
- private:
-  json config_;
-  int counter_;
-  int last_target_;
 };
 
 json load_config() {
@@ -102,32 +78,28 @@ json load_config() {
     }
 }
 
-int main() {
-    try {
-        // Load configuration
-        json config = load_config();
-        std::string server_address("0.0.0.0:50051");
-        
-        std::cout << "NodeB: Starting server on " << server_address << std::endl;
-        std::cout << "NodeB: Configured edges:" << std::endl;
-        for (const auto& edge : config["edges"]) {
-            std::cout << "  - " << edge["id"] << " at " 
-                      << edge["ip"] << ":" << edge["port"] << std::endl;
-        }
+void RunServer(const std::string& server_address, const std::string& user_id) {
+    DataServiceImpl service(user_id);
+    
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(&service);
+    
+    std::unique_ptr<Server> server(builder.BuildAndStart());
+    std::cout << "Server listening on " << server_address << std::endl;
+    server->Wait();
+}
 
-        DataServiceImpl service(config);
-        ServerBuilder builder;
-        builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-        builder.RegisterService(&service);
-        std::unique_ptr<Server> server(builder.BuildAndStart());
-        
-        std::cout << "NodeB: Server started successfully" << std::endl;
-        server->Wait();
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+int main(int argc, char** argv) {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <server_address> <user_id>" << std::endl;
         return 1;
     }
+    
+    std::string server_address(argv[1]);
+    std::string user_id(argv[2]);
+    
+    RunServer(server_address, user_id);
     
     return 0;
 }

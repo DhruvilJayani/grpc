@@ -1,58 +1,51 @@
 #include <iostream>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <vector>
-#include <iomanip>
+#include <fstream>
+#include <string>
+#include <json/json.h>
 
-// Same structure as in shared_memory.hpp
-struct SharedData {
-    int counter;
-    int last_target;
-    int message_history[10];
-    int history_size;
-    int history_index;
-};
-
-int main() {
-    // Open the shared memory
-    int fd = shm_open("/grpc_shm", O_RDONLY, 0666);
-    if (fd == -1) {
-        std::cerr << "Failed to open shared memory. Is the process running?" << std::endl;
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <user_id>" << std::endl;
         return 1;
     }
 
-    // Map the shared memory
-    SharedData* data = static_cast<SharedData*>(mmap(nullptr, sizeof(SharedData), 
-                                                    PROT_READ, MAP_SHARED,
-                                                    fd, 0));
-    if (data == MAP_FAILED) {
-        std::cerr << "Failed to map shared memory" << std::endl;
-        close(fd);
-        return 1;
-    }
-
-    // Print the shared memory contents
-    std::cout << "\n=== Shared Memory Contents ===" << std::endl;
-    std::cout << "Total messages processed: " << data->counter << std::endl;
-    std::cout << "Last target node: " << (data->last_target == -1 ? "None" : 
-                                        (data->last_target == 0 ? "Node C" : "Node D")) << std::endl;
+    std::string user_id = argv[1];
+    std::string filename = user_id + "_data.json";
     
-    std::cout << "\nMessage History:" << std::endl;
-    if (data->history_size == 0) {
-        std::cout << "No messages in history" << std::endl;
-    } else {
-        // Start from the oldest message
-        int start_idx = (data->history_index - data->history_size + 10) % 10;
-        for (int i = 0; i < data->history_size; i++) {
-            int idx = (start_idx + i) % 10;
-            std::cout << "Message " << i + 1 << ": " << data->message_history[idx] << std::endl;
+    try {
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "Failed to open file: " << filename << std::endl;
+            std::cerr << "Is the process running?" << std::endl;
+            return 1;
         }
-    }
 
-    // Cleanup
-    munmap(data, sizeof(SharedData));
-    close(fd);
+        Json::Value root;
+        Json::CharReaderBuilder builder;
+        std::string errs;
+        if (!Json::parseFromStream(builder, file, &root, &errs)) {
+            std::cerr << "Failed to parse JSON: " << errs << std::endl;
+            return 1;
+        }
+
+        std::cout << "\n=== Shared Data Contents ===" << std::endl;
+        std::cout << "Total messages processed: " << root["counter"].asInt() << std::endl;
+        std::cout << "Last target node: " << (root["last_target"].asInt() == -1 ? "None" : 
+                                            (root["last_target"].asInt() == 0 ? "Node C" : "Node D")) << std::endl;
+        
+        std::cout << "\nMessage History:" << std::endl;
+        const Json::Value& history = root["message_history"];
+        if (history.empty()) {
+            std::cout << "No messages in history" << std::endl;
+        } else {
+            for (Json::Value::ArrayIndex i = 0; i < history.size(); i++) {
+                std::cout << "Message " << i + 1 << ": " << history[i].asInt() << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading data: " << e.what() << std::endl;
+        return 1;
+    }
 
     return 0;
 } 
