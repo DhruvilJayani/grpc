@@ -26,25 +26,25 @@ run_in_terminal "NodeB" "$ORIGINAL_DIR/nodes/nodeB" "./build/server 0.0.0.0:5005
 # Wait for Node B to start
 sleep 2
 
-# Start Node E (C++ server) - Start Node E before Node C
-echo "Starting Node E..."
-run_in_terminal "NodeE" "$ORIGINAL_DIR/nodes/nodeE" "./build/server 0.0.0.0:50055"
-
-# Wait for Node E to start
-sleep 2
-
 # Start Node C (C++ server)
 echo "Starting Node C..."
-run_in_terminal "NodeC" "$ORIGINAL_DIR/nodes/nodeC" "./build/server"
+run_in_terminal "NodeC" "$ORIGINAL_DIR/nodes/nodeC" "./build/server user1"
 
 # Wait for Node C to start
 sleep 2
 
 # Start Node D (C++ server)
 echo "Starting Node D..."
-run_in_terminal "NodeD" "$ORIGINAL_DIR/nodes/nodeD" "./build/server"
+run_in_terminal "NodeD" "$ORIGINAL_DIR/nodes/nodeD" "./build/server user1"
 
 # Wait for Node D to start
+sleep 2
+
+# Start Node E (C++ server) - Start Node E after C and D
+echo "Starting Node E..."
+run_in_terminal "NodeE" "$ORIGINAL_DIR/nodes/nodeE" "./build/server 0.0.0.0:50055 user1"
+
+# Wait for Node E to start
 sleep 2
 
 # Start Node A (Python client)

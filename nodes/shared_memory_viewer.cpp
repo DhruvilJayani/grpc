@@ -15,27 +15,31 @@ struct SharedData {
     int messages_to_b[100];
     int messages_to_c[100];
     int messages_to_d[100];
+    int messages_to_e[100];
     int history_size;
     int b_size;
     int c_size;
     int d_size;
+    int e_size;
     int last_even_id;
     int last_odd_id;
 };
 
-int main(int argc, char** argv) {
+int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <user_id>" << std::endl;
         return 1;
     }
 
     std::string user_id = argv[1];
-    std::string filename = "nodeB/" + user_id + "_shared_data.bin";
-
-    // Open the file
+    std::string filename = user_id + "_shared_data.bin";
+    
+    std::cout << "Shared Memory Viewer: Using file: " << filename << std::endl;
+    
+    // Open the shared memory file
     int fd = open(filename.c_str(), O_RDONLY);
     if (fd == -1) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
+        std::cerr << "Failed to open file: " << filename << " (errno: " << errno << ")" << std::endl;
         return 1;
     }
 
@@ -52,6 +56,7 @@ int main(int argc, char** argv) {
     std::vector<int> to_b(data->messages_to_b, data->messages_to_b + data->b_size);
     std::vector<int> to_c(data->messages_to_c, data->messages_to_c + data->c_size);
     std::vector<int> to_d(data->messages_to_d, data->messages_to_d + data->d_size);
+    std::vector<int> to_e(data->messages_to_e, data->messages_to_e + data->e_size);
 
     // Convert to JSON for pretty printing
     json j;
@@ -63,6 +68,7 @@ int main(int argc, char** argv) {
     j["messages_to_b"] = to_b;
     j["messages_to_c"] = to_c;
     j["messages_to_d"] = to_d;
+    j["messages_to_e"] = to_e;
 
     // Print the data
     std::cout << "\nShared Memory Contents:" << std::endl;
@@ -75,6 +81,7 @@ int main(int argc, char** argv) {
     std::cout << "\nMessages forwarded to Node B: " << j["messages_to_b"].dump() << std::endl;
     std::cout << "Messages forwarded to Node C: " << j["messages_to_c"].dump() << std::endl;
     std::cout << "Messages forwarded to Node D: " << j["messages_to_d"].dump() << std::endl;
+    std::cout << "Messages forwarded to Node E: " << j["messages_to_e"].dump() << std::endl;
     std::cout << "======================\n" << std::endl;
 
     // Cleanup

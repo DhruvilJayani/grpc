@@ -36,15 +36,20 @@ cd build
 cmake ..
 make
 
+# Build shared memory viewer
+echo "Building shared memory viewer..."
+cd "$ORIGINAL_DIR"
+g++ -std=c++11 -I/opt/homebrew/include -o nodes/shared_memory_viewer nodes/shared_memory_viewer.cpp
+
 # Generate Python protobuf files for Node A
 echo "Generating Python protobuf files for Node A..."
-cd "$ORIGINAL_DIR/.."
+cd "$ORIGINAL_DIR"
 
 # Now we use the correct path to the protos directory
 python3 -m grpc_tools.protoc \
-    -I=./protos \
-    --python_out=./nodes/nodeA \
-    --grpc_python_out=./nodes/nodeA \
-    ./protos/data.proto
+    -I=nodes/protos \
+    --python_out=nodes/nodeA \
+    --grpc_python_out=nodes/nodeA \
+    nodes/protos/data.proto
 
 echo "Build complete!"

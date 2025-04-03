@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <random>
 #include <chrono>
+#include "shared_memory.hpp"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -21,9 +22,11 @@ class DataServiceImpl final : public DataService::Service {
 private:
     std::unique_ptr<DataService::Stub> nodeE_stub_;
     int message_count_;  // Counter for total messages received
+    SharedMemory shared_memory_;  // Added shared memory
 
 public:
-    DataServiceImpl(const std::string& nodeE_address) : message_count_(0) {
+    DataServiceImpl(const std::string& nodeE_address, const std::string& user_id) 
+        : message_count_(0), shared_memory_(user_id) {
         // Create a channel to Node E using the provided address
         auto channel = grpc::CreateChannel(nodeE_address, grpc::InsecureChannelCredentials());
         nodeE_stub_ = DataService::NewStub(channel);
@@ -32,35 +35,50 @@ public:
     }
 
     Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
-        message_count_++;  // Increment message counter
-        std::cout << "NodeD: Received data ID " << request->id() << " (Message #" << message_count_ << ")\n";
-        
-        // If message_count is odd, keep it at D
-        // If message_count is even, forward it to E
-        bool should_forward = (message_count_ % 2 == 0);
-        
-        if (should_forward) {
-            std::cout << "NodeD: Forwarding data ID " << request->id() << " to Node E (even count)\n";
-            ClientContext client_context;
-            Empty response;
-            Status status = nodeE_stub_->PushData(&client_context, *request, &response);
+        try {
+            // Increment message counter and log received data
+            shared_memory_.incrementCounter();
+            int message_count = shared_memory_.getCounter();
+            std::cout << "NodeD: Received data - ID: " << request->id() 
+                      << ", Message: " << request->message() 
+                      << ", Count: " << message_count << std::endl;
+
+            // Update shared memory - only add to history once
+            shared_memory_.updateMessageHistory(request->id());
             
-            if (status.ok()) {
-                std::cout << "NodeD: Successfully forwarded data ID " << request->id() << " to Node E\n";
+            // Forward to Node E if count is even
+            if (message_count % 2 == 0) {
+                std::cout << "NodeD: Forwarding message " << request->id() << " to Node E" << std::endl;
+                try {
+                    // Forward to Node E
+                    Empty response;
+                    Status status = nodeE_stub_->PushData(context, request, &response);
+                    if (!status.ok()) {
+                        std::cerr << "NodeD: Failed to forward to Node E: " << status.error_message() << std::endl;
+                        throw std::runtime_error("Failed to forward to Node E");
+                    }
+                    // Only add to E's array in shared memory
+                    shared_memory_.addMessageToNode(request->id(), 3); // 3 is Node E
+                } catch (const std::exception& e) {
+                    std::cerr << "NodeD: Exception while forwarding to Node E: " << e.what() << std::endl;
+                    throw;
+                }
             } else {
-                std::cerr << "NodeD: Failed to forward data ID " << request->id() << " to Node E: " 
-                          << status.error_message() << "\n";
+                // Keep message locally if count is odd
+                std::cout << "NodeD: Keeping message " << request->id() << " locally" << std::endl;
+                // Add to D's array in shared memory
+                shared_memory_.addMessageToNode(request->id(), 2); // 2 is Node D
             }
-        } else {
-            std::cout << "NodeD: Keeping data ID " << request->id() << " locally (odd count)\n";
+
+            // Print current distribution
+            std::cout << "NodeD: Current distribution - D: " << shared_memory_.getCounter() / 2 + 1 
+                      << ", E: " << shared_memory_.getCounter() / 2 << std::endl;
+
+            return Status::OK;
+        } catch (const std::exception& e) {
+            std::cerr << "NodeD: Error in PushData: " << e.what() << std::endl;
+            return Status(grpc::StatusCode::INTERNAL, "Error processing message");
         }
-        
-        // Print current distribution
-        int d_count = (message_count_ + 1) / 2;  // Node D gets (n+1)/2 messages
-        int e_count = message_count_ / 2;         // Node E gets n/2 messages
-        std::cout << "Current distribution - Node D: " << d_count << ", Node E: " << e_count << std::endl;
-        
-        return Status::OK;
     }
 };
 
@@ -69,16 +87,15 @@ json load_config() {
     return json::parse(f);
 }
 
-int main() {
+void RunServer(const std::string& server_address, const std::string& user_id) {
     try {
         // Load configuration
         json config = load_config();
-        std::string server_address("0.0.0.0:50053");
         std::string nodeE_address = config.value("nodeE_address", "0.0.0.0:50055");
         
         std::cout << "NodeD: Starting server on " << server_address << std::endl;
 
-        DataServiceImpl service(nodeE_address);
+        DataServiceImpl service(nodeE_address, user_id);
         ServerBuilder builder;
         builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
         builder.RegisterService(&service);
@@ -89,8 +106,20 @@ int main() {
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <user_id>" << std::endl;
         return 1;
     }
+    
+    std::string server_address("0.0.0.0:50053");
+    std::string user_id(argv[1]);
+    
+    RunServer(server_address, user_id);
     
     return 0;
 } 

@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <nlohmann/json.hpp>
+#include <sys/stat.h>
 
 using json = nlohmann::json;
 
@@ -38,17 +39,37 @@ private:
     size_t size_;
 
     void initialize() {
+        // Get the absolute path to the shared memory file
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) {
+            throw std::runtime_error("Failed to get current working directory");
+        }
+        
+        // Create absolute path to shared memory file in nodes directory
+        std::string abs_path = std::string(cwd) + "/../" + filename_;
+        std::cout << "NodeC: Using shared memory file: " << abs_path << std::endl;
+        
+        // First check if file exists
+        struct stat st;
+        bool file_exists = (stat(abs_path.c_str(), &st) == 0);
+        std::cout << "NodeC: File exists: " << (file_exists ? "yes" : "no") << std::endl;
+        
         // Create or open the file
-        fd_ = open(filename_.c_str(), O_CREAT | O_RDWR, 0666);
+        fd_ = open(abs_path.c_str(), O_CREAT | O_RDWR, 0666);
         if (fd_ == -1) {
+            std::cerr << "NodeC: Failed to open file: " << abs_path << " (errno: " << errno << ")" << std::endl;
             throw std::runtime_error("Failed to open file");
         }
 
-        // Set the file size
-        size_ = sizeof(SharedData);
-        if (ftruncate(fd_, size_) == -1) {
-            close(fd_);
-            throw std::runtime_error("Failed to set file size");
+        // Only set file size if it's a new file
+        if (!file_exists) {
+            size_ = sizeof(SharedData);
+            if (ftruncate(fd_, size_) == -1) {
+                close(fd_);
+                throw std::runtime_error("Failed to set file size");
+            }
+        } else {
+            size_ = st.st_size;
         }
 
         // Map the file into memory
@@ -58,8 +79,8 @@ private:
             throw std::runtime_error("Failed to map file");
         }
 
-        // Initialize if this is the first time
-        if (data_->counter == 0) {
+        // Only initialize if this is a new file
+        if (!file_exists) {
             data_->counter = 0;
             data_->last_target = -1;
             data_->history_size = 0;
@@ -71,6 +92,8 @@ private:
             data_->last_odd_id = 0;
             msync(data_, sizeof(SharedData), MS_SYNC);
         }
+        
+        std::cout << "NodeC: Shared memory initialized. Current counter: " << data_->counter << std::endl;
     }
 
 public:
