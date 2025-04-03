@@ -26,6 +26,13 @@ run_in_terminal "NodeB" "$ORIGINAL_DIR/nodes/nodeB" "./build/server 0.0.0.0:5005
 # Wait for Node B to start
 sleep 2
 
+# Start Node E (C++ server) - Start Node E before Node C
+echo "Starting Node E..."
+run_in_terminal "NodeE" "$ORIGINAL_DIR/nodes/nodeE" "./build/server 0.0.0.0:50055"
+
+# Wait for Node E to start
+sleep 2
+
 # Start Node C (C++ server)
 echo "Starting Node C..."
 run_in_terminal "NodeC" "$ORIGINAL_DIR/nodes/nodeC" "./build/server"

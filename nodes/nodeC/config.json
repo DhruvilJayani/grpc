@@ -2,5 +2,6 @@
   "id": "C",
   "ip": "localhost",
   "port": 50052,
-  "edges": []
+  "edges": [],
+  "nodeE_address": "0.0.0.0:50055"
 }

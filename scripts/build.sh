@@ -28,6 +28,14 @@ cd build
 cmake ..
 make
 
+# Build Node E (C++ server)
+echo "Building Node E (C++ server)..."
+cd ../../nodeE
+mkdir -p build
+cd build
+cmake ..
+make
+
 # Generate Python protobuf files for Node A
 echo "Generating Python protobuf files for Node A..."
 cd "$ORIGINAL_DIR/.."

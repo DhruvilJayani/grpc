@@ -3,21 +3,65 @@
 #include <iostream>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <random>
+#include <chrono>
 
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using grpc::Channel;
+using grpc::ClientContext;
 using data::DataMessage;
 using data::Empty;
 using data::DataService;
 using json = nlohmann::json;
 
 class DataServiceImpl final : public DataService::Service {
-  Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
-    std::cout << "NodeD: Received data ID " << request->id() << "\n";
-    return Status::OK;
-  }
+private:
+    std::unique_ptr<DataService::Stub> nodeE_stub_;
+    int message_count_;  // Counter for total messages received
+
+public:
+    DataServiceImpl(const std::string& nodeE_address) : message_count_(0) {
+        // Create a channel to Node E using the provided address
+        auto channel = grpc::CreateChannel(nodeE_address, grpc::InsecureChannelCredentials());
+        nodeE_stub_ = DataService::NewStub(channel);
+        std::cout << "NodeD: Connected to Node E at " << nodeE_address << std::endl;
+        std::cout << "NodeD: Will distribute messages evenly (D gets extra on odd counts)" << std::endl;
+    }
+
+    Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
+        message_count_++;  // Increment message counter
+        std::cout << "NodeD: Received data ID " << request->id() << " (Message #" << message_count_ << ")\n";
+        
+        // If message_count is odd, keep it at D
+        // If message_count is even, forward it to E
+        bool should_forward = (message_count_ % 2 == 0);
+        
+        if (should_forward) {
+            std::cout << "NodeD: Forwarding data ID " << request->id() << " to Node E (even count)\n";
+            ClientContext client_context;
+            Empty response;
+            Status status = nodeE_stub_->PushData(&client_context, *request, &response);
+            
+            if (status.ok()) {
+                std::cout << "NodeD: Successfully forwarded data ID " << request->id() << " to Node E\n";
+            } else {
+                std::cerr << "NodeD: Failed to forward data ID " << request->id() << " to Node E: " 
+                          << status.error_message() << "\n";
+            }
+        } else {
+            std::cout << "NodeD: Keeping data ID " << request->id() << " locally (odd count)\n";
+        }
+        
+        // Print current distribution
+        int d_count = (message_count_ + 1) / 2;  // Node D gets (n+1)/2 messages
+        int e_count = message_count_ / 2;         // Node E gets n/2 messages
+        std::cout << "Current distribution - Node D: " << d_count << ", Node E: " << e_count << std::endl;
+        
+        return Status::OK;
+    }
 };
 
 json load_config() {
@@ -30,10 +74,11 @@ int main() {
         // Load configuration
         json config = load_config();
         std::string server_address("0.0.0.0:50053");
+        std::string nodeE_address = config.value("nodeE_address", "0.0.0.0:50055");
         
         std::cout << "NodeD: Starting server on " << server_address << std::endl;
 
-        DataServiceImpl service;
+        DataServiceImpl service(nodeE_address);
         ServerBuilder builder;
         builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
         builder.RegisterService(&service);
