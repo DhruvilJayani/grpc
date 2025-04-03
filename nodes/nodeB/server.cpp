@@ -103,6 +103,13 @@ public:
                                        std::to_string(target_edge["port"].get<int>());
             std::string target_name = target_edge["id"].get<std::string>();
 
+            // Track which node received the message
+            if (target_name == "C") {
+                shared_memory_.addMessageToNode(request->id(), 1); // 1 for Node C
+            } else if (target_name == "D") {
+                shared_memory_.addMessageToNode(request->id(), 2); // 2 for Node D
+            }
+
             std::cout << "NodeB: Forwarding message ID " << request->id() 
                       << " to " << target_name << " at " << target_address 
                       << " (Total messages processed: " << shared_memory_.getCounter() << ")" << std::endl;

@@ -1,1 +1,21 @@
-{"counter":0,"last_target":-1,"message_history":[]}
+{
+    "counter": 5,
+    "last_target": 0,
+    "message_history": [
+        1,
+        2,
+        3,
+        4,
+        5
+    ],
+    "messages_to_b": [],
+    "messages_to_c": [
+        3,
+        4,
+        5
+    ],
+    "messages_to_d": [
+        1,
+        2
+    ]
+}

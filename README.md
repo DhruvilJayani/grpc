@@ -293,3 +293,162 @@ def generate_data(id):
 2. Add monitoring and metrics collection
 3. Implement data persistence
 4. Add load balancing capabilities
+
+## Step 3: Shared Memory Implementation
+
+### Viewing Shared Memory Data
+
+There are two ways to view the shared memory data:
+
+1. **Using the Shared Memory Viewer (Recommended)**
+```bash
+# Navigate to the nodes directory
+cd nodes
+
+# Build the shared memory viewer
+g++ -std=c++11 -I/opt/homebrew/include -o shared_memory_viewer shared_memory_viewer.cpp
+
+# Run the viewer (replace 'user1' with your user ID)
+./shared_memory_viewer user1
+```
+
+The viewer will display:
+- Total messages processed
+- Last target node (C or D)
+- Message history (last messages processed)
+- Messages forwarded to each node (B, C, D)
+
+2. **Viewing Raw Binary Data**
+```bash
+# Navigate to Node B's directory
+cd nodes/nodeB
+
+# View the binary data using hexdump
+hexdump -C user1_shared_data.bin
+```
+
+Note: The shared memory file (`user1_shared_data.bin`) is created in Node B's directory when the node starts running. The file contains:
+- A counter for total messages processed
+- The last target node (0 for Node C, 1 for Node D)
+- Arrays storing message history and messages forwarded to each node
+- Size trackers for each array
+
+The shared memory implementation uses fixed-size arrays to ensure compatibility with memory mapping, with a maximum of 100 messages stored for each category.
+
+## Complete System Setup and Running Instructions
+
+### Step 1: Build the System
+
+1. **Build all nodes and shared memory viewer using build.sh**
+```bash
+# Navigate to the project root directory
+cd /path/to/grpc-main
+
+# Make the build script executable
+chmod +x build.sh
+
+# Run the build script
+./build.sh
+```
+
+This script will:
+- Build Node B, C, and D
+- Generate protobuf files
+- Build the shared memory viewer
+- Set up all necessary configurations
+
+### Step 2: Run the System
+
+1. **Start all nodes using run.sh**
+```bash
+# Make the run script executable
+chmod +x run.sh
+
+# Run the system
+./run.sh
+```
+
+This script will:
+- Start Node C in a new terminal
+- Start Node D in a new terminal
+- Start Node B in a new terminal
+- Start Node A (Python client) in a new terminal
+
+### Step 3: View Shared Memory Data
+
+1. **Build the shared memory viewer (if not already built)**
+```bash
+cd nodes
+g++ -std=c++11 -I/opt/homebrew/include -o shared_memory_viewer shared_memory_viewer.cpp
+```
+
+2. **Run the viewer**
+```bash
+# View data for user1
+./shared_memory_viewer user1
+```
+
+The viewer will display:
+- Total messages processed
+- Last target node (C or D)
+- Message history (last messages processed)
+- Messages forwarded to each node (B, C, D)
+
+### Step 4: View Raw Binary Data (Optional)
+
+```bash
+# Navigate to Node B's directory
+cd nodes/nodeB
+
+# View the binary data using hexdump
+hexdump -C user1_shared_data.bin
+```
+
+### Troubleshooting
+
+1. **If build.sh fails:**
+   - Check if all dependencies are installed
+   - Ensure CMake version is 3.10 or higher
+   - Verify protobuf and gRPC installations
+   - Check if the script has execute permissions
+
+2. **If run.sh fails:**
+   - Check if all nodes were built successfully
+   - Verify that ports 50051, 50052, and 50053 are available
+   - Check if the script has execute permissions
+   - Ensure Python virtual environment is set up correctly
+
+3. **If shared memory viewer fails:**
+   - Ensure Node B is running
+   - Verify the shared memory file exists in nodeB directory
+   - Check if the user ID matches the one used when starting Node B
+
+## Quick Start Guide (Using Scripts)
+
+### 1. Build the System
+```bash
+# Make build script executable and run it
+chmod +x build.sh
+./build.sh
+```
+
+### 2. Run the System
+```bash
+# Make run script executable and run it
+chmod +x run.sh
+./run.sh
+```
+
+### 3. View Shared Memory Data
+```bash
+# Build and run the shared memory viewer
+cd nodes
+g++ -std=c++11 -I/opt/homebrew/include -o shared_memory_viewer shared_memory_viewer.cpp
+./shared_memory_viewer user1
+```
+
+Note: The shared memory viewer will show:
+- Total messages processed
+- Last target node (C or D)
+- Message history
+- Messages forwarded to each node
