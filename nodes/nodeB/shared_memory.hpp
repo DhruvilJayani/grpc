@@ -15,7 +15,7 @@ using json = nlohmann::json;
 
 struct SharedData {
     int counter;
-    int last_target;
+    int last_target;      // 0 for Node C, 1 for Node D
     int message_history[100];
     int messages_to_b[100];
     int messages_to_c[100];
@@ -24,6 +24,8 @@ struct SharedData {
     int b_size;
     int c_size;
     int d_size;
+    int last_even_id;     // Track last even ID sent to Node D
+    int last_odd_id;      // Track last odd ID sent to Node C
 };
 
 class SharedMemory {
@@ -62,6 +64,8 @@ private:
             data_->b_size = 0;
             data_->c_size = 0;
             data_->d_size = 0;
+            data_->last_even_id = 0;
+            data_->last_odd_id = 0;
             msync(data_, sizeof(SharedData), MS_SYNC);
         }
     }
@@ -113,11 +117,13 @@ public:
             case 1: // Node C
                 if (data_->c_size < 100) {
                     data_->messages_to_c[data_->c_size++] = message_id;
+                    data_->last_odd_id = message_id;
                 }
                 break;
             case 2: // Node D
                 if (data_->d_size < 100) {
                     data_->messages_to_d[data_->d_size++] = message_id;
+                    data_->last_even_id = message_id;
                 }
                 break;
         }
@@ -133,6 +139,8 @@ public:
         json j;
         j["counter"] = data_->counter;
         j["last_target"] = data_->last_target;
+        j["last_even_id"] = data_->last_even_id;
+        j["last_odd_id"] = data_->last_odd_id;
         
         std::vector<int> history(data_->message_history, data_->message_history + data_->history_size);
         std::vector<int> to_b(data_->messages_to_b, data_->messages_to_b + data_->b_size);

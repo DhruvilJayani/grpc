@@ -2,13 +2,11 @@
   "edges": [
     {
       "id": "C",
-      "ip": "localhost",
-      "port": 50052
+      "address": "localhost:50052"
     },
     {
       "id": "D",
-      "ip": "localhost",
-      "port": 50053
+      "address": "localhost:50053"
     }
   ]
 }

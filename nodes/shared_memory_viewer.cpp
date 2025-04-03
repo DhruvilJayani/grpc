@@ -19,6 +19,8 @@ struct SharedData {
     int b_size;
     int c_size;
     int d_size;
+    int last_even_id;
+    int last_odd_id;
 };
 
 int main(int argc, char** argv) {
@@ -55,6 +57,8 @@ int main(int argc, char** argv) {
     json j;
     j["counter"] = data->counter;
     j["last_target"] = data->last_target;
+    j["last_even_id"] = data->last_even_id;
+    j["last_odd_id"] = data->last_odd_id;
     j["message_history"] = history;
     j["messages_to_b"] = to_b;
     j["messages_to_c"] = to_c;
@@ -65,6 +69,8 @@ int main(int argc, char** argv) {
     std::cout << "======================" << std::endl;
     std::cout << "Total messages processed: " << j["counter"] << std::endl;
     std::cout << "Last target node: " << (j["last_target"] == 0 ? "C" : "D") << std::endl;
+    std::cout << "Last even ID (sent to D): " << j["last_even_id"] << std::endl;
+    std::cout << "Last odd ID (sent to C): " << j["last_odd_id"] << std::endl;
     std::cout << "\nMessage History: " << j["message_history"].dump() << std::endl;
     std::cout << "\nMessages forwarded to Node B: " << j["messages_to_b"].dump() << std::endl;
     std::cout << "Messages forwarded to Node C: " << j["messages_to_c"].dump() << std::endl;

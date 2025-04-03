@@ -47,83 +47,87 @@ private:
     json config_;
 
     json load_config() {
-        std::ifstream file("config.json");
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open config.json");
+        try {
+            std::ifstream file("config.json");
+            if (!file.is_open()) {
+                std::cerr << "NodeB: Failed to open config.json" << std::endl;
+                throw std::runtime_error("Failed to open config.json");
+            }
+            json config;
+            file >> config;
+            return config;
+        } catch (const std::exception& e) {
+            std::cerr << "NodeB: Error loading config: " << e.what() << std::endl;
+            throw;
         }
-        json config;
-        file >> config;
-        return config;
     }
 
 public:
     DataServiceImpl(const std::string& user_id) : shared_memory_(user_id) {
         try {
             config_ = load_config();
-            std::cout << "NodeB: Loaded configuration for Node C and Node D" << std::endl;
-            for (const auto& edge : config_["edges"]) {
-                std::cout << "NodeB: Configured edge - " << edge["id"] << " at " 
-                          << edge["ip"] << ":" << edge["port"] << std::endl;
-            }
+            std::cout << "NodeB: Configuration loaded successfully" << std::endl;
         } catch (const std::exception& e) {
-            std::cerr << "Error loading config: " << e.what() << std::endl;
+            std::cerr << "NodeB: Error in constructor: " << e.what() << std::endl;
             throw;
         }
     }
 
     Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
         try {
-            std::cout << "\n==========================================" << std::endl;
-            std::cout << "NodeB: PushData method called!" << std::endl;
-            std::cout << "NodeB: Received message ID " << request->id() << " from Node A" << std::endl;
-            std::cout << "NodeB: Message payload: " << request->payload() << std::endl;
-            std::cout << "NodeB: Message timestamp: " << request->timestamp() << std::endl;
-            std::cout << "==========================================\n" << std::endl;
-            
-            // Increment the counter
+            // Log received data
+            std::cout << "NodeB: Received data [ID: " << request->id() 
+                      << ", Size: " << request->payload().size() 
+                      << " bytes, Time: " << request->timestamp() << "]" << std::endl;
+
+            // Update shared memory
             shared_memory_.incrementCounter();
-            std::cout << "NodeB: Counter incremented to " << shared_memory_.getCounter() << std::endl;
-            
-            // Update message history
             shared_memory_.updateMessageHistory(request->id());
-            std::cout << "NodeB: Message history updated" << std::endl;
-            
-            // Forward to either Node C or Node D
-            int target = rand() % 2;  // 0 for Node C, 1 for Node D
-            shared_memory_.setLastTarget(target);
-            
-            const auto& edges = config_["edges"];
-            if (edges.size() < 2) {
-                std::cerr << "Error: Not enough edges configured" << std::endl;
-                return Status(grpc::StatusCode::INTERNAL, "Not enough edges configured");
-            }
-            
-            const auto& target_edge = edges[target];
-            std::string target_address = target_edge["ip"].get<std::string>() + ":" + 
-                                       std::to_string(target_edge["port"].get<int>());
-            std::string target_name = target_edge["id"].get<std::string>();
 
-            // Track which node received the message
-            if (target_name == "C") {
-                shared_memory_.addMessageToNode(request->id(), 1); // 1 for Node C
-            } else if (target_name == "D") {
-                shared_memory_.addMessageToNode(request->id(), 2); // 2 for Node D
+            // Determine target node based on message ID
+            int target_node = (request->id() % 2 == 0) ? 1 : 0; // Even IDs to D (1), odd IDs to C (0)
+            
+            // Update last target in shared memory
+            shared_memory_.setLastTarget(target_node);
+            
+            // Add message to appropriate node's history
+            shared_memory_.addMessageToNode(request->id(), target_node + 1); // +1 because 0 is Node B
+
+            // Get target address from config
+            if (!config_.contains("edges") || config_["edges"].size() < 2) {
+                std::cerr << "NodeB: Invalid configuration - missing edges" << std::endl;
+                return Status(grpc::StatusCode::INTERNAL, "Invalid configuration");
             }
 
-            std::cout << "NodeB: Forwarding message ID " << request->id() 
-                      << " to " << target_name << " at " << target_address 
-                      << " (Total messages processed: " << shared_memory_.getCounter() << ")" << std::endl;
+            std::string target_address;
+            if (target_node == 0) {
+                target_address = config_["edges"][0]["address"];
+                std::cout << "NodeB: Forwarding message " << request->id() << " to Node C" << std::endl;
+            } else {
+                target_address = config_["edges"][1]["address"];
+                std::cout << "NodeB: Forwarding message " << request->id() << " to Node D" << std::endl;
+            }
 
             // Create channel to target node
-            std::cout << "NodeB: Creating channel to " << target_address << "..." << std::endl;
-            auto channel = CreateChannel(target_address, grpc::InsecureChannelCredentials());
-            DataServiceClient client(channel);
-            client.PushData(*request);
+            auto channel = grpc::CreateChannel(target_address, grpc::InsecureChannelCredentials());
+            auto stub = DataService::NewStub(channel);
 
+            // Forward the message
+            ClientContext client_context;
+            Empty response;
+            Status status = stub->PushData(&client_context, *request, &response);
+
+            if (!status.ok()) {
+                std::cerr << "NodeB: Failed to forward message " << request->id() 
+                          << " to target node: " << status.error_message() << std::endl;
+                return Status(grpc::StatusCode::INTERNAL, "Failed to forward message");
+            }
+
+            std::cout << "NodeB: Successfully forwarded message " << request->id() << std::endl;
             return Status::OK;
         } catch (const std::exception& e) {
-            std::cerr << "Error in PushData: " << e.what() << std::endl;
-            return Status(grpc::StatusCode::INTERNAL, "Internal server error");
+            std::cerr << "NodeB: Error processing message: " << e.what() << std::endl;
+            return Status(grpc::StatusCode::INTERNAL, "Error processing message");
         }
     }
 };
