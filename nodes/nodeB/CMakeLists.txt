@@ -24,6 +24,9 @@ message(STATUS "Using protobuf ${Protobuf_VERSION}")
 find_package(gRPC CONFIG REQUIRED)
 message(STATUS "Using gRPC ${gRPC_VERSION}")
 
+# Find OpenSSL for SHA-256
+find_package(OpenSSL REQUIRED)
+
 add_executable(server
     server.cpp
     data.pb.cc
@@ -44,6 +47,7 @@ target_link_libraries(server PRIVATE
     Boost::system
     nlohmann_json::nlohmann_json
     JsonCpp::JsonCpp
+    OpenSSL::Crypto
 )
 
 # Copy config.json to build directory

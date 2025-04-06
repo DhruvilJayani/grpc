@@ -2,10 +2,16 @@
 #include "data.grpc.pb.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <nlohmann/json.hpp>
-#include <random>
-#include <chrono>
-#include "shared_memory.hpp"
+#include <memory>
+#include <cstdlib>
+#include "shared_memory.hpp"  // Uses dynamic shared memory (see our revised version)
+#include <openssl/sha.h>
+#include <cstring>    // For memcpy
+#include <vector>
+#include <string>
+#include <algorithm>
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -13,113 +19,168 @@ using grpc::ServerContext;
 using grpc::Status;
 using grpc::Channel;
 using grpc::ClientContext;
+using grpc::CreateChannel;
 using data::DataMessage;
 using data::Empty;
 using data::DataService;
 using json = nlohmann::json;
 
+// Number of columns expected in the local table.
+const int NUM_COLS = 16;
+// Name of the CSV file used to store rows locally for NodeC.
+const std::string LOCAL_TABLE_FILENAME = "nodeC_table.csv";
+
+// Helper: Split a string by a given delimiter.
+std::vector<std::string> splitRow(const std::string& row, char delimiter) {
+    std::vector<std::string> tokens;
+    std::istringstream ss(row);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+// Helper: Append a row (vector of strings) to the CSV file.
+void appendRowToCSV(const std::vector<std::string>& row) {
+    std::ofstream outfile;
+    outfile.open(LOCAL_TABLE_FILENAME, std::ios::out | std::ios::app);
+    if (!outfile.is_open()) {
+        std::cerr << "NodeC: Error opening local table file for writing." << std::endl;
+        return;
+    }
+    for (size_t i = 0; i < row.size(); i++) {
+        outfile << row[i];
+        if (i < row.size() - 1)
+            outfile << ",";
+    }
+    outfile << "\n";
+    outfile.close();
+}
+
 class DataServiceImpl final : public DataService::Service {
 private:
-    std::unique_ptr<DataService::Stub> nodeE_stub_;
-    int message_count_;  // Counter for total messages received
-    SharedMemory shared_memory_;  // Added shared memory
+    // Dynamic shared memory instance; its filename is determined by the passed user_id.
+    SharedMemory shared_memory_;
+    json config_;
+
+    // Load configuration from config.json.
+    json load_config() {
+        std::ifstream file("config.json");
+        if (!file.is_open()) {
+            std::cerr << "NodeC: Failed to open config.json" << std::endl;
+            throw std::runtime_error("Failed to open config.json");
+        }
+        json config;
+        file >> config;
+        return config;
+    }
 
 public:
-    DataServiceImpl(const std::string& nodeE_address, const std::string& user_id) 
-        : message_count_(0), shared_memory_(user_id) {
-        // Create a channel to Node E using the provided address
-        auto channel = grpc::CreateChannel(nodeE_address, grpc::InsecureChannelCredentials());
-        nodeE_stub_ = DataService::NewStub(channel);
-        std::cout << "NodeC: Connected to Node E at " << nodeE_address << std::endl;
-        std::cout << "NodeC: Will distribute messages evenly (C gets extra on odd counts)" << std::endl;
+    // Constructor: create shared memory using the provided user_id.
+    DataServiceImpl(const std::string& user_id) : shared_memory_(user_id) {
+        try {
+            config_ = load_config();
+            std::cout << "NodeC: Configuration loaded successfully." << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "NodeC: Error in constructor: " << e.what() << std::endl;
+            throw;
+        }
     }
 
     Status PushData(ServerContext* context, const DataMessage* request, Empty* reply) override {
         try {
-            // Increment message counter and log received data
-            shared_memory_.incrementCounter();
-            int message_count = shared_memory_.getCounter();
             std::cout << "NodeC: Received data - ID: " << request->id() 
-                      << ", Message: " << request->message() 
-                      << ", Count: " << message_count << std::endl;
-
-            // Update shared memory - only add to history once
-            shared_memory_.updateMessageHistory(request->id());
-            
-            // Forward to Node E if count is even
-            if (message_count % 2 == 0) {
-                std::cout << "NodeC: Forwarding message " << request->id() << " to Node E" << std::endl;
-                try {
-                    // Forward to Node E
-                    Empty response;
-                    Status status = nodeE_stub_->PushData(context, request, &response);
-                    if (!status.ok()) {
-                        std::cerr << "NodeC: Failed to forward to Node E: " << status.error_message() << std::endl;
-                        throw std::runtime_error("Failed to forward to Node E");
-                    }
-                    // Only add to E's array in shared memory
-                    shared_memory_.addMessageToNode(request->id(), 3); // 3 is Node E
-                } catch (const std::exception& e) {
-                    std::cerr << "NodeC: Exception while forwarding to Node E: " << e.what() << std::endl;
-                    throw;
+                      << ", Size: " << request->payload().size() << std::endl;
+    
+            // Compute SHA‑256 hash of the payload.
+            unsigned char hash[SHA256_DIGEST_LENGTH];
+            SHA256(reinterpret_cast<const unsigned char*>(request->payload().data()),
+                   request->payload().size(), hash);
+    
+            // Convert the first 4 bytes of the hash to a 32‑bit unsigned integer.
+            uint32_t hash_val;
+            std::memcpy(&hash_val, hash, sizeof(uint32_t));
+    
+            // Use modulo 4 so that valid values are 0, 1, 2, or 3.
+            // According to our new logic, if mod == 1 then data belongs to NodeC.
+            unsigned int mod_val = hash_val % 4;
+            std::cout << "NodeC: Computed hash mod 4 value: " << mod_val << std::endl;
+    
+            if (mod_val == 1) {
+                // Data belongs to NodeC: process locally.
+                std::cout << "NodeC: Mod value is 1, saving data locally in tabular format." << std::endl;
+                std::string payload_str = request->payload();
+                std::vector<std::string> columns = splitRow(payload_str, ',');
+                if (columns.size() < NUM_COLS) {
+                    columns.resize(NUM_COLS, "");
+                } else if (columns.size() > NUM_COLS) {
+                    columns.resize(NUM_COLS);
                 }
+                appendRowToCSV(columns);
+    
+                // Extract the first field as the row index.
+                int row_index = 0;
+                try {
+                    row_index = std::stoi(columns[0]);
+                } catch (const std::exception& ex) {
+                    std::cerr << "NodeC: Could not convert first field to integer. Aborting." << std::endl;
+                    return Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid index in CSV");
+                }
+    
+                // Update shared memory using the extracted index.
+                shared_memory_.incrementCounter();
+                shared_memory_.addMessageToNode(row_index, 1);
+                std::cout << "NodeC: Data saved locally and row index " << row_index
+                          << " stored in shared memory." << std::endl;
+                return Status::OK;
+            } else if (mod_val == 3) {
+                // Data belongs to NodeE: forward the message.
+                std::cout << "NodeC: Mod value is 3, forwarding message " << request->id()
+                          << " to Node E." << std::endl;
+                std::string nodeE_address = config_.value("nodeE_address", "0.0.0.0:50055");
+                auto channel = CreateChannel(nodeE_address, grpc::InsecureChannelCredentials());
+                auto stub = DataService::NewStub(channel);
+                ClientContext client_context;
+                Empty response;
+                Status status = stub->PushData(&client_context, *request, &response);
+                if (!status.ok()) {
+                    std::cerr << "NodeC: Failed to forward message " << request->id()
+                              << " to Node E: " << status.error_message() << std::endl;
+                    return Status(grpc::StatusCode::INTERNAL, "Failed to forward message");
+                }
+                return status;
             } else {
-                // Keep message locally if count is odd
-                std::cout << "NodeC: Keeping message " << request->id() << " locally" << std::endl;
-                // Add to C's array in shared memory
-                shared_memory_.addMessageToNode(request->id(), 1); // 1 is Node C
+                // For any other mod value, do nothing.
+                std::cout << "NodeC: Mod value " << mod_val 
+                          << " does not correspond to Node C or Node E. Ignoring message " 
+                          << request->id() << std::endl;
+                return Status::OK;
             }
-
-            // Print current distribution
-            std::cout << "NodeC: Current distribution - C: " << shared_memory_.getCounter() / 2 + 1 
-                      << ", E: " << shared_memory_.getCounter() / 2 << std::endl;
-
-            return Status::OK;
         } catch (const std::exception& e) {
-            std::cerr << "NodeC: Error in PushData: " << e.what() << std::endl;
+            std::cerr << "NodeC: Error processing message: " << e.what() << std::endl;
             return Status(grpc::StatusCode::INTERNAL, "Error processing message");
         }
     }
 };
 
-json load_config() {
-    std::ifstream f("config.json");
-    return json::parse(f);
-}
-
 void RunServer(const std::string& server_address, const std::string& user_id) {
-    try {
-        // Load configuration
-        json config = load_config();
-        std::string nodeE_address = config.value("nodeE_address", "0.0.0.0:50055");
-        
-        std::cout << "NodeC: Starting server on " << server_address << std::endl;
-
-        DataServiceImpl service(nodeE_address, user_id);
-        ServerBuilder builder;
-        builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-        builder.RegisterService(&service);
-        std::unique_ptr<Server> server(builder.BuildAndStart());
-        
-        std::cout << "NodeC: Server started successfully" << std::endl;
-        server->Wait();
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        throw;
-    }
+    DataServiceImpl service(user_id);
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(&service);
+    std::unique_ptr<Server> server(builder.BuildAndStart());
+    std::cout << "NodeC: Server started on " << server_address << std::endl;
+    server->Wait();
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <user_id>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <server_address> <user_id>" << std::endl;
         return 1;
     }
-    
-    std::string server_address("0.0.0.0:50052");
-    std::string user_id(argv[1]);
-    
+    std::string server_address(argv[1]);
+    std::string user_id(argv[2]);
     RunServer(server_address, user_id);
-    
     return 0;
-} 
+}

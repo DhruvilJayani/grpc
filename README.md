@@ -444,7 +444,8 @@ chmod +x run.sh
 # Build and run the shared memory viewer
 cd nodes
 g++ -std=c++11 -I/opt/homebrew/include -o shared_memory_viewer shared_memory_viewer.cpp
-./shared_memory_viewer user1
+./shared_memory_viewer nodeB/memory1
+./shared_memory_viewer memory2
 ```
 
 Note: The shared memory viewer will show:
