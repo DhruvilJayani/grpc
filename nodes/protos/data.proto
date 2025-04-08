@@ -1,15 +1,93 @@
 syntax = "proto3";
 
-package data;
+package crashrecord;
 
-service DataService {
-  rpc PushData (DataMessage) returns (Empty); 
+// Message representing a single crash record.
+message CrashRecord {
+   string crashDate               = 1;
+   string crashTime               = 2;
+   string borough                 = 3;
+   int32  zipCode                 = 4;
+   double latitude                = 5;
+   double longitude               = 6;
+   string location                = 7;
+   string onStreetName            = 8;
+   string crossStreetName         = 9;
+   string offStreetName           = 10;
+   int32  numberOfPersonsInjured      = 11;
+   int32  numberOfPersonsKilled       = 12;
+   int32  numberOfPedestriansInjured  = 13;
+   int32  numberOfPedestriansKilled   = 14;
+   int32  numberOfCyclistInjured      = 15;
+   int32  numberOfCyclistKilled       = 16;
+   int32  numberOfMotoristInjured     = 17;
+   int32  numberOfMotoristKilled      = 18;
+   string contributingFactorVehicle1  = 19;
+   string contributingFactorVehicle2  = 20;
+   string contributingFactorVehicle3  = 21;
+   string contributingFactorVehicle4  = 22;
+   string contributingFactorVehicle5  = 23;
+   int32  collisionId             = 24;
+   string vehicleTypeCode1        = 25;
+   string vehicleTypeCode2        = 26;
+   string vehicleTypeCode3        = 27;
+   string vehicleTypeCode4        = 28;
+   string vehicleTypeCode5        = 29;
 }
 
-message DataMessage {
-  int32 id = 1;         
-  bytes payload = 2;      
-  string timestamp = 3;   
+// Request to create a crash record
+message CreateCrashRecordRequest {
+  CrashRecord record = 1;
 }
 
-message Empty {} 
+// Response for creating a crash record
+message CreateCrashRecordResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Request to fetch a crash record by collision ID
+message GetCrashRecordRequest {
+  int32 collisionId = 1;
+}
+
+// Response for fetching a crash record
+message GetCrashRecordResponse {
+  CrashRecord record = 1;
+}
+
+// Request to list all crash records
+message ListCrashRecordsRequest {
+  // optional: add pagination later
+}
+
+// Response to list crash records
+message ListCrashRecordsResponse {
+  repeated CrashRecord records = 1;
+}
+
+// Request to delete a crash record
+message DeleteCrashRecordRequest {
+  int32 collisionId = 1;
+}
+
+// Response for deleting a crash record
+message DeleteCrashRecordResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StreamCrashRecordsResponse {
+   bool success = 1;
+   string message = 2;
+}
+
+
+// Service to manage crash records
+service CrashRecordService {
+  rpc CreateCrashRecord(CreateCrashRecordRequest) returns (CreateCrashRecordResponse);
+  rpc GetCrashRecord(GetCrashRecordRequest) returns (GetCrashRecordResponse);
+  rpc ListCrashRecords(ListCrashRecordsRequest) returns (ListCrashRecordsResponse);
+  rpc DeleteCrashRecord(DeleteCrashRecordRequest) returns (DeleteCrashRecordResponse);
+  rpc StreamCrashRecords(stream CrashRecord) returns (StreamCrashRecordsResponse);
+}
